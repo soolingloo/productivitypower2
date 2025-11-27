@@ -10,3 +10,7 @@ export const loadFromStorage = (): Category[] | null => {
   const data = localStorage.getItem(STORAGE_KEY);
   return data ? JSON.parse(data) : null;
 };
+
+export const clearStorage = () => {
+  localStorage.removeItem(STORAGE_KEY);
+};

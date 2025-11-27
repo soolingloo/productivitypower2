@@ -37,18 +37,18 @@ export const CategoryCard: React.FC<CategoryCardProps> = ({
 
   return (
     <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col h-full">
-      <div className={`${category.color} p-4 text-white relative group`}>
+      <div className={`${category.color} p-4 text-gray-800 relative group`}>
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">{category.name}</h3>
           <button
             onClick={() => onDeleteCategory(category.id)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded"
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/40 rounded"
             title="Delete category"
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-sm text-white/90 mt-1">
+        <p className="text-sm text-gray-700 mt-1">
           {completedCount} of {totalCount} completed
         </p>
       </div>

@@ -3,16 +3,16 @@ import { Plus, CheckCircle2 } from 'lucide-react';
 import { Category, Task } from './types';
 import { CategoryCard } from './components/CategoryCard';
 import { AddCategoryModal } from './components/AddCategoryModal';
-import { saveToStorage, loadFromStorage } from './utils/storage';
+import { saveToStorage, loadFromStorage, clearStorage } from './utils/storage';
 import { getRandomColor } from './utils/colors';
 
 const initialCategories: Category[] = [
-  { id: '1', name: 'Client', tasks: [], color: 'bg-blue-500' },
-  { id: '2', name: 'Biz System', tasks: [], color: 'bg-purple-500' },
-  { id: '3', name: 'Web & Funnel', tasks: [], color: 'bg-green-500' },
-  { id: '4', name: 'AI & Tech', tasks: [], color: 'bg-orange-500' },
-  { id: '5', name: 'Learning', tasks: [], color: 'bg-pink-500' },
-  { id: '6', name: 'Personal', tasks: [], color: 'bg-teal-500' },
+  { id: '1', name: 'Client', tasks: [], color: 'bg-blue-200' },
+  { id: '2', name: 'Biz System', tasks: [], color: 'bg-purple-200' },
+  { id: '3', name: 'Web & Funnel', tasks: [], color: 'bg-green-200' },
+  { id: '4', name: 'AI & Tech', tasks: [], color: 'bg-orange-200' },
+  { id: '5', name: 'Learning', tasks: [], color: 'bg-pink-200' },
+  { id: '6', name: 'Personal', tasks: [], color: 'bg-teal-200' },
 ];
 
 function App() {
@@ -21,7 +21,23 @@ function App() {
 
   useEffect(() => {
     const saved = loadFromStorage();
-    setCategories(saved || initialCategories);
+    
+    // Check if saved data has old colors and needs migration
+    if (saved) {
+      const needsMigration = saved.some(cat => 
+        !cat.color || !cat.color.includes('-200')
+      );
+      
+      if (needsMigration) {
+        // Clear old data and use fresh initial categories
+        clearStorage();
+        setCategories(initialCategories);
+      } else {
+        setCategories(saved);
+      }
+    } else {
+      setCategories(initialCategories);
+    }
   }, []);
 
   useEffect(() => {

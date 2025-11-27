@@ -1,14 +1,14 @@
 export const categoryColors = [
-  'bg-blue-500',
-  'bg-purple-500',
-  'bg-green-500',
-  'bg-orange-500',
-  'bg-pink-500',
-  'bg-teal-500',
-  'bg-indigo-500',
-  'bg-red-500',
-  'bg-yellow-500',
-  'bg-cyan-500',
+  'bg-blue-200',
+  'bg-purple-200',
+  'bg-green-200',
+  'bg-orange-200',
+  'bg-pink-200',
+  'bg-teal-200',
+  'bg-indigo-200',
+  'bg-rose-200',
+  'bg-amber-200',
+  'bg-cyan-200',
 ];
 
 export const getRandomColor = (usedColors: string[]): string => {
