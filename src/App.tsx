@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, CheckCircle2 } from 'lucide-react';
+import { Plus, CheckCircle2, LogOut } from 'lucide-react';
 import { Category, Task } from './types';
 import { CategoryCard } from './components/CategoryCard';
 import { AddCategoryModal } from './components/AddCategoryModal';
+import { AuthPage } from './components/AuthPage';
 import { saveToStorage, loadFromStorage, clearStorage } from './utils/storage';
 import { getRandomColor } from './utils/colors';
 
@@ -16,35 +17,60 @@ const initialCategories: Category[] = [
 ];
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
-    const saved = loadFromStorage();
-    
-    // Check if saved data has old colors and needs migration
-    if (saved) {
-      const needsMigration = saved.some(cat => 
-        !cat.color || !cat.color.includes('-200')
-      );
-      
-      if (needsMigration) {
-        // Clear old data and use fresh initial categories
-        clearStorage();
-        setCategories(initialCategories);
-      } else {
-        setCategories(saved);
-      }
-    } else {
-      setCategories(initialCategories);
+    const user = localStorage.getItem('currentUser');
+    if (user) {
+      const userData = JSON.parse(user);
+      setCurrentUser(userData);
+      setIsAuthenticated(true);
     }
   }, []);
 
   useEffect(() => {
-    if (categories.length > 0) {
+    if (isAuthenticated) {
+      const saved = loadFromStorage();
+      
+      if (saved) {
+        const needsMigration = saved.some(cat => 
+          !cat.color || !cat.color.includes('-200')
+        );
+        
+        if (needsMigration) {
+          clearStorage();
+          setCategories(initialCategories);
+        } else {
+          setCategories(saved);
+        }
+      } else {
+        setCategories(initialCategories);
+      }
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (categories.length > 0 && isAuthenticated) {
       saveToStorage(categories);
     }
-  }, [categories]);
+  }, [categories, isAuthenticated]);
+
+  const handleLogin = (email: string, name: string) => {
+    setCurrentUser({ email, name });
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    if (confirm('Are you sure you want to log out?')) {
+      localStorage.removeItem('currentUser');
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setCategories([]);
+    }
+  };
 
   const addCategory = (name: string) => {
     const usedColors = categories.map(c => c.color);
@@ -123,6 +149,10 @@ function App() {
     }));
   };
 
+  if (!isAuthenticated) {
+    return <AuthPage onLogin={handleLogin} />;
+  }
+
   const totalTasks = categories.reduce((sum, cat) => sum + cat.tasks.length, 0);
   const completedTasks = categories.reduce(
     (sum, cat) => sum + cat.tasks.filter(t => t.completed).length,
@@ -138,15 +168,26 @@ function App() {
               <h1 className="text-4xl font-bold text-gray-800 mb-2">
                 My Productivity Power
               </h1>
-              <p className="text-gray-600">Organize your tasks across different areas of life</p>
+              <p className="text-gray-600">
+                Welcome back, <span className="font-semibold">{currentUser?.name}</span>! Organize your tasks across different areas of life
+              </p>
             </div>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-lg hover:shadow-xl font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              Add Category
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-lg hover:shadow-xl font-medium"
+              >
+                <Plus className="w-5 h-5" />
+                Add Category
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                title="Log out"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-6 bg-white rounded-lg p-4 shadow-sm border border-gray-200">
