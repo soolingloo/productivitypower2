@@ -4,6 +4,8 @@ import { Category, Task } from './types';
 import { CategoryCard } from './components/CategoryCard';
 import { AddCategoryModal } from './components/AddCategoryModal';
 import { AuthPage } from './components/AuthPage';
+import { EmailConfirmedPopup } from './components/EmailConfirmedPopup';
+import { supabase } from './lib/supabase';
 import { saveToStorage, loadFromStorage, clearStorage } from './utils/storage';
 import { getRandomColor } from './utils/colors';
 
@@ -18,18 +20,60 @@ const initialCategories: Category[] = [
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEmailConfirmed, setShowEmailConfirmed] = useState(false);
 
   useEffect(() => {
-    const user = localStorage.getItem('currentUser');
-    if (user) {
-      const userData = JSON.parse(user);
-      setCurrentUser(userData);
-      setIsAuthenticated(true);
-    }
+    checkUser();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+        setCurrentUser({ email: session.user.email!, name: userName });
+        setIsAuthenticated(true);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('type') === 'signup' || event === 'USER_UPDATED') {
+          setShowEmailConfirmed(true);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setCategories([]);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+        setCurrentUser({ email: session.user.email!, name: userName });
+        setIsAuthenticated(true);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('type') === 'signup') {
+          setShowEmailConfirmed(true);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking user session:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -63,9 +107,9 @@ function App() {
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm('Are you sure you want to log out?')) {
-      localStorage.removeItem('currentUser');
+      await supabase.auth.signOut();
       setCurrentUser(null);
       setIsAuthenticated(false);
       setCategories([]);
@@ -148,6 +192,19 @@ function App() {
       return category;
     }));
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-100 via-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg animate-pulse">
+            <CheckCircle2 className="w-8 h-8 text-white" />
+          </div>
+          <p className="text-gray-600 font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <AuthPage onLogin={handleLogin} />;
@@ -244,6 +301,10 @@ function App() {
           onClose={() => setShowAddModal(false)}
           onAdd={addCategory}
         />
+      )}
+
+      {showEmailConfirmed && (
+        <EmailConfirmedPopup onClose={() => setShowEmailConfirmed(false)} />
       )}
     </div>
   );

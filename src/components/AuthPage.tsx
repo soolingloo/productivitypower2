@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle2, Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface AuthPageProps {
   onLogin: (email: string, name: string) => void;
@@ -8,6 +9,7 @@ interface AuthPageProps {
 export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
   const [isSignUp, setIsSignUp] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -17,7 +19,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
     name: '',
     email: '',
     password: '',
+    general: '',
   });
+  const [successMessage, setSuccessMessage] = useState('');
 
   const validateEmail = (email: string) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,6 +33,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
       name: '',
       email: '',
       password: '',
+      general: '',
     };
 
     if (isSignUp && !formData.name.trim()) {
@@ -51,52 +56,75 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
     return !newErrors.name && !newErrors.email && !newErrors.password;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (validateForm()) {
-      // Store user data in localStorage
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrors({ name: '', email: '', password: '', general: '' });
+    setSuccessMessage('');
+
+    try {
       if (isSignUp) {
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        const existingUser = users.find((u: any) => u.email === formData.email);
-        
-        if (existingUser) {
-          setErrors({ ...errors, email: 'Email already registered' });
+        const { data, error } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              name: formData.name,
+            },
+            emailRedirectTo: 'https://productivity-dashboard-with-1764242397805.chatand.build',
+          },
+        });
+
+        if (error) {
+          setErrors({ ...errors, general: error.message });
+          setIsLoading(false);
           return;
         }
-        
-        users.push({
-          name: formData.name,
+
+        if (data.user) {
+          setSuccessMessage('Account created! Please check your email to confirm your account.');
+          setFormData({ name: '', email: '', password: '' });
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
           password: formData.password,
         });
-        localStorage.setItem('users', JSON.stringify(users));
-        localStorage.setItem('currentUser', JSON.stringify({ email: formData.email, name: formData.name }));
-        onLogin(formData.email, formData.name);
-      } else {
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        const user = users.find((u: any) => u.email === formData.email && u.password === formData.password);
-        
-        if (!user) {
-          setErrors({ ...errors, email: 'Invalid email or password' });
+
+        if (error) {
+          setErrors({ ...errors, general: error.message });
+          setIsLoading(false);
           return;
         }
-        
-        localStorage.setItem('currentUser', JSON.stringify({ email: user.email, name: user.name }));
-        onLogin(user.email, user.name);
+
+        if (data.user) {
+          const userName = data.user.user_metadata?.name || formData.email.split('@')[0];
+          onLogin(formData.email, userName);
+        }
       }
+    } catch (error) {
+      setErrors({ ...errors, general: 'An unexpected error occurred. Please try again.' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleInputChange = (field: string, value: string) => {
     setFormData({ ...formData, [field]: value });
-    setErrors({ ...errors, [field]: '' });
+    setErrors({ ...errors, [field]: '', general: '' });
+    setSuccessMessage('');
   };
 
   const switchMode = () => {
     setIsSignUp(!isSignUp);
     setFormData({ name: '', email: '', password: '' });
-    setErrors({ name: '', email: '', password: '' });
+    setErrors({ name: '', email: '', password: '', general: '' });
+    setSuccessMessage('');
   };
 
   return (
@@ -118,25 +146,39 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
           <div className="flex gap-2 mb-6 bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setIsSignUp(true)}
+              disabled={isLoading}
               className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
                 isSignUp
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-800'
-              }`}
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               Sign Up
             </button>
             <button
               onClick={() => setIsSignUp(false)}
+              disabled={isLoading}
               className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
                 !isSignUp
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-800'
-              }`}
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               Sign In
             </button>
           </div>
+
+          {errors.general && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{errors.general}</p>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-600">{successMessage}</p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {isSignUp && (
@@ -150,9 +192,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
                     type="text"
                     value={formData.name}
                     onChange={(e) => handleInputChange('name', e.target.value)}
+                    disabled={isLoading}
                     className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                       errors.name ? 'border-red-500' : 'border-gray-300'
-                    }`}
+                    } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     placeholder="John Doe"
                   />
                 </div>
@@ -172,9 +215,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
+                  disabled={isLoading}
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                     errors.email ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   placeholder="you@example.com"
                 />
               </div>
@@ -193,14 +237,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
+                  disabled={isLoading}
                   className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                     errors.password ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   {showPassword ? (
@@ -217,9 +263,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-lg font-medium hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-lg font-medium hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
             >
-              {isSignUp ? 'Create Account' : 'Sign In'}
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  {isSignUp ? 'Creating Account...' : 'Signing In...'}
+                </>
+              ) : (
+                <>{isSignUp ? 'Create Account' : 'Sign In'}</>
+              )}
             </button>
           </form>
 
@@ -228,7 +282,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
               {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
               <button
                 onClick={switchMode}
-                className="text-blue-600 font-medium hover:text-blue-700 transition-colors"
+                disabled={isLoading}
+                className="text-blue-600 font-medium hover:text-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSignUp ? 'Sign In' : 'Sign Up'}
               </button>
