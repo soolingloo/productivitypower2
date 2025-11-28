@@ -6,109 +6,143 @@ import { AddCategoryModal } from './components/AddCategoryModal';
 import { AuthPage } from './components/AuthPage';
 import { EmailConfirmedPopup } from './components/EmailConfirmedPopup';
 import { supabase } from './lib/supabase';
-import { saveToStorage, loadFromStorage, clearStorage } from './utils/storage';
 import { getRandomColor } from './utils/colors';
-
-const initialCategories: Category[] = [
-  { id: '1', name: 'Client', tasks: [], color: 'bg-blue-200' },
-  { id: '2', name: 'Biz System', tasks: [], color: 'bg-purple-200' },
-  { id: '3', name: 'Web & Funnel', tasks: [], color: 'bg-green-200' },
-  { id: '4', name: 'AI & Tech', tasks: [], color: 'bg-orange-200' },
-  { id: '5', name: 'Learning', tasks: [], color: 'bg-pink-200' },
-  { id: '6', name: 'Personal', tasks: [], color: 'bg-teal-200' },
-];
+import {
+  loadUserData,
+  initializeDefaultCategories,
+  saveCategory,
+  deleteCategory as dbDeleteCategory,
+  saveTask,
+  updateTask,
+  deleteTask as dbDeleteTask,
+  reorderTasks,
+} from './utils/database';
 
 function App() {
+  console.log('🚀 App component rendering');
+  
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; name: string } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEmailConfirmed, setShowEmailConfirmed] = useState(false);
 
   useEffect(() => {
-    // Check URL parameters immediately on mount
-    const urlHash = window.location.hash;
+    console.log('🔵 useEffect triggered');
     
-    // Check for confirmation in hash
+    const urlHash = window.location.hash;
     const hasConfirmation = urlHash.includes('type=signup');
     
     if (hasConfirmation) {
       setShowEmailConfirmed(true);
-      // Don't clean up URL yet - let Supabase process it first
     }
 
-    checkUser();
+    let mounted = true;
+
+    const initAuth = async () => {
+      console.log('🔐 Starting auth check...');
+      
+      try {
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Auth check timeout')), 5000)
+        );
+
+        const authPromise = supabase.auth.getSession();
+
+        const { data: { session } } = await Promise.race([authPromise, timeoutPromise]) as any;
+        
+        console.log('✅ Auth check complete:', session ? 'User found' : 'No user');
+
+        if (!mounted) return;
+
+        if (session?.user) {
+          const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+          setCurrentUser({ 
+            id: session.user.id,
+            email: session.user.email!, 
+            name: userName 
+          });
+          setIsAuthenticated(true);
+
+          console.log('📦 Loading categories for user:', session.user.id);
+          await loadCategories(session.user.id);
+        }
+      } catch (error) {
+        console.error('❌ Auth error:', error);
+      } finally {
+        if (mounted) {
+          console.log('✅ Setting isLoading to false');
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initAuth();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔔 Auth state changed:', event);
+      
+      if (!mounted) return;
+
       if (event === 'SIGNED_IN' && session?.user) {
         const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
-        setCurrentUser({ email: session.user.email!, name: userName });
+        setCurrentUser({ 
+          id: session.user.id,
+          email: session.user.email!, 
+          name: userName 
+        });
         setIsAuthenticated(true);
 
-        // Clean up URL after successful sign in
         if (window.location.hash.includes('type=signup')) {
           window.history.replaceState({}, document.title, window.location.pathname);
         }
+
+        await loadCategories(session.user.id);
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setIsAuthenticated(false);
         setCategories([]);
       }
-      setIsLoading(false);
     });
 
     return () => {
+      console.log('🧹 Cleanup: unmounting');
+      mounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, []); // Empty dependency array - only run once
 
-  const checkUser = async () => {
+  const loadCategories = async (userId: string) => {
+    console.log('📂 loadCategories called for:', userId);
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Load categories timeout')), 5000)
+      );
+
+      const loadPromise = loadUserData(userId);
+
+      const data = await Promise.race([loadPromise, timeoutPromise]) as Category[];
       
-      if (session?.user) {
-        const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
-        setCurrentUser({ email: session.user.email!, name: userName });
-        setIsAuthenticated(true);
+      console.log('📊 Categories loaded:', data.length);
+      
+      if (data.length === 0) {
+        console.log('🆕 No categories, initializing defaults...');
+        const defaultCats = await initializeDefaultCategories(userId);
+        console.log('✅ Default categories created:', defaultCats.length);
+        setCategories(defaultCats);
+      } else {
+        setCategories(data);
       }
     } catch (error) {
-      console.error('Error checking user session:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('❌ Error loading categories:', error);
+      setCategories([]);
     }
   };
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      const saved = loadFromStorage();
-      
-      if (saved) {
-        const needsMigration = saved.some(cat => 
-          !cat.color || !cat.color.includes('-200')
-        );
-        
-        if (needsMigration) {
-          clearStorage();
-          setCategories(initialCategories);
-        } else {
-          setCategories(saved);
-        }
-      } else {
-        setCategories(initialCategories);
-      }
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (categories.length > 0 && isAuthenticated) {
-      saveToStorage(categories);
-    }
-  }, [categories, isAuthenticated]);
-
   const handleLogin = (email: string, name: string) => {
-    setCurrentUser({ email, name });
-    setIsAuthenticated(true);
+    console.log('👤 handleLogin called');
   };
 
   const handleLogout = async () => {
@@ -120,84 +154,137 @@ function App() {
     }
   };
 
-  const addCategory = (name: string) => {
-    const usedColors = categories.map(c => c.color);
-    const newCategory: Category = {
-      id: Date.now().toString(),
-      name,
-      tasks: [],
-      color: getRandomColor(usedColors),
-    };
-    setCategories([...categories, newCategory]);
-  };
+  const addCategory = async (name: string) => {
+    if (!currentUser) {
+      alert('Error: You must be logged in to add a category');
+      return;
+    }
 
-  const deleteCategory = (categoryId: string) => {
-    if (confirm('Are you sure you want to delete this category and all its tasks?')) {
-      setCategories(categories.filter(c => c.id !== categoryId));
+    const usedColors = categories.map(c => c.color);
+    const color = getRandomColor(usedColors);
+    
+    const categoryId = await saveCategory(currentUser.id, name, color);
+    
+    if (categoryId) {
+      const newCategory: Category = {
+        id: categoryId,
+        name,
+        tasks: [],
+        color,
+      };
+      setCategories([...categories, newCategory]);
+    } else {
+      alert('Failed to create category. Please try again.');
     }
   };
 
-  const addTask = (categoryId: string, taskText: string) => {
-    setCategories(categories.map(category => {
-      if (category.id === categoryId) {
-        const newTask: Task = {
-          id: Date.now().toString(),
-          text: taskText,
-          completed: false,
-          createdAt: Date.now(),
-        };
-        return { ...category, tasks: [...category.tasks, newTask] };
+  const deleteCategory = async (categoryId: string) => {
+    if (confirm('Are you sure you want to delete this category and all its tasks?')) {
+      const success = await dbDeleteCategory(categoryId);
+      if (success) {
+        setCategories(categories.filter(c => c.id !== categoryId));
       }
-      return category;
-    }));
+    }
   };
 
-  const toggleTask = (categoryId: string, taskId: string) => {
-    setCategories(categories.map(category => {
-      if (category.id === categoryId) {
-        return {
-          ...category,
-          tasks: category.tasks.map(task =>
-            task.id === taskId ? { ...task, completed: !task.completed } : task
-          ),
-        };
-      }
-      return category;
-    }));
+  const addTask = async (categoryId: string, taskText: string) => {
+    if (!currentUser) return;
+
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return;
+
+    const position = category.tasks.length;
+    const taskId = await saveTask(currentUser.id, categoryId, taskText, position);
+
+    if (taskId) {
+      setCategories(categories.map(cat => {
+        if (cat.id === categoryId) {
+          const newTask: Task = {
+            id: taskId,
+            text: taskText,
+            completed: false,
+            position,
+            createdAt: Date.now(),
+          };
+          return { ...cat, tasks: [...cat.tasks, newTask] };
+        }
+        return cat;
+      }));
+    }
   };
 
-  const deleteTask = (categoryId: string, taskId: string) => {
-    setCategories(categories.map(category => {
-      if (category.id === categoryId) {
-        return {
-          ...category,
-          tasks: category.tasks.filter(task => task.id !== taskId),
-        };
-      }
-      return category;
-    }));
+  const toggleTask = async (categoryId: string, taskId: string) => {
+    const category = categories.find(c => c.id === categoryId);
+    const task = category?.tasks.find(t => t.id === taskId);
+    
+    if (!task) return;
+
+    const success = await updateTask(taskId, { completed: !task.completed });
+    
+    if (success) {
+      setCategories(categories.map(cat => {
+        if (cat.id === categoryId) {
+          return {
+            ...cat,
+            tasks: cat.tasks.map(t =>
+              t.id === taskId ? { ...t, completed: !t.completed } : t
+            ),
+          };
+        }
+        return cat;
+      }));
+    }
   };
 
-  const moveTask = (categoryId: string, taskId: string, direction: 'up' | 'down') => {
-    setCategories(categories.map(category => {
-      if (category.id === categoryId) {
-        const taskIndex = category.tasks.findIndex(t => t.id === taskId);
-        if (taskIndex === -1) return category;
-
-        const newTasks = [...category.tasks];
-        const targetIndex = direction === 'up' ? taskIndex - 1 : taskIndex + 1;
-
-        if (targetIndex < 0 || targetIndex >= newTasks.length) return category;
-
-        [newTasks[taskIndex], newTasks[targetIndex]] = [newTasks[targetIndex], newTasks[taskIndex]];
-
-        return { ...category, tasks: newTasks };
-      }
-      return category;
-    }));
+  const deleteTask = async (categoryId: string, taskId: string) => {
+    const success = await dbDeleteTask(taskId);
+    
+    if (success) {
+      setCategories(categories.map(cat => {
+        if (cat.id === categoryId) {
+          return {
+            ...cat,
+            tasks: cat.tasks.filter(t => t.id !== taskId),
+          };
+        }
+        return cat;
+      }));
+    }
   };
+
+  const moveTask = async (categoryId: string, taskId: string, direction: 'up' | 'down') => {
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return;
+
+    const taskIndex = category.tasks.findIndex(t => t.id === taskId);
+    if (taskIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? taskIndex - 1 : taskIndex + 1;
+    if (targetIndex < 0 || targetIndex >= category.tasks.length) return;
+
+    const newTasks = [...category.tasks];
+    [newTasks[taskIndex], newTasks[targetIndex]] = [newTasks[targetIndex], newTasks[taskIndex]];
+
+    const taskIds = newTasks.map(t => t.id);
+    const success = await reorderTasks(categoryId, taskIds);
+
+    if (success) {
+      setCategories(categories.map(cat => {
+        if (cat.id === categoryId) {
+          return { 
+            ...cat, 
+            tasks: newTasks.map((task, index) => ({ ...task, position: index }))
+          };
+        }
+        return cat;
+      }));
+    }
+  };
+
+  console.log('📊 Render state:', { isLoading, isAuthenticated, categoriesCount: categories.length });
 
   if (isLoading) {
+    console.log('⏳ Showing loading screen');
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-100 via-blue-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
@@ -205,12 +292,14 @@ function App() {
             <CheckCircle2 className="w-8 h-8 text-white" />
           </div>
           <p className="text-gray-600 font-medium">Loading...</p>
+          <p className="text-xs text-gray-400 mt-2">Check console for debug info</p>
         </div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
+    console.log('🔓 Showing auth page');
     return (
       <>
         <AuthPage onLogin={handleLogin} />
@@ -220,6 +309,8 @@ function App() {
       </>
     );
   }
+
+  console.log('✅ Showing main app');
 
   const totalTasks = categories.reduce((sum, cat) => sum + cat.tasks.length, 0);
   const completedTasks = categories.reduce(
