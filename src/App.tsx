@@ -27,6 +27,17 @@ function App() {
   const [showEmailConfirmed, setShowEmailConfirmed] = useState(false);
 
   useEffect(() => {
+    // Check URL parameters immediately on mount
+    const urlHash = window.location.hash;
+    
+    // Check for confirmation in hash
+    const hasConfirmation = urlHash.includes('type=signup');
+    
+    if (hasConfirmation) {
+      setShowEmailConfirmed(true);
+      // Don't clean up URL yet - let Supabase process it first
+    }
+
     checkUser();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -35,9 +46,8 @@ function App() {
         setCurrentUser({ email: session.user.email!, name: userName });
         setIsAuthenticated(true);
 
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('type') === 'signup' || event === 'USER_UPDATED') {
-          setShowEmailConfirmed(true);
+        // Clean up URL after successful sign in
+        if (window.location.hash.includes('type=signup')) {
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       } else if (event === 'SIGNED_OUT') {
@@ -61,12 +71,6 @@ function App() {
         const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
         setCurrentUser({ email: session.user.email!, name: userName });
         setIsAuthenticated(true);
-
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('type') === 'signup') {
-          setShowEmailConfirmed(true);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
       }
     } catch (error) {
       console.error('Error checking user session:', error);
@@ -207,7 +211,14 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    return <AuthPage onLogin={handleLogin} />;
+    return (
+      <>
+        <AuthPage onLogin={handleLogin} />
+        {showEmailConfirmed && (
+          <EmailConfirmedPopup onClose={() => setShowEmailConfirmed(false)} />
+        )}
+      </>
+    );
   }
 
   const totalTasks = categories.reduce((sum, cat) => sum + cat.tasks.length, 0);
